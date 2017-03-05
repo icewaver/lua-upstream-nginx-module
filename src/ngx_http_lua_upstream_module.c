@@ -36,7 +36,7 @@ static ngx_http_upstream_rr_peer_t *
 static int ngx_http_lua_upstream_set_peer_down(lua_State * L);
 static int ngx_http_lua_upstream_current_upstream_name(lua_State *L);
 
-
+// 在各个阶段需要初始化的函数
 static ngx_http_module_t ngx_http_lua_upstream_ctx = {
     NULL,                           /* preconfiguration */
     ngx_http_lua_upstream_init,     /* postconfiguration */
@@ -68,6 +68,7 @@ ngx_module_t ngx_http_lua_upstream_module = {
 static ngx_int_t
 ngx_http_lua_upstream_init(ngx_conf_t *cf)
 {
+    -- 把ngx.upstream的初始化函数注册到ngx lua模块的数据结构中
     if (ngx_http_lua_add_package_preload(cf, "ngx.upstream",
                                          ngx_http_lua_upstream_create_module)
         != NGX_OK)
@@ -84,6 +85,7 @@ ngx_http_lua_upstream_create_module(lua_State * L)
 {
     lua_createtable(L, 0, 6);
 
+    // 下面会注册api函数，并修改名称为lua友好的名字
     lua_pushcfunction(L, ngx_http_lua_upstream_get_upstreams);
     lua_setfield(L, -2, "get_upstreams");
 
@@ -110,15 +112,21 @@ static int
 ngx_http_lua_upstream_get_upstreams(lua_State * L)
 {
     ngx_uint_t                            i;
+    // 下面这个数据结构是upstream模块中定义的upstream的每个srv的数据结构
     ngx_http_upstream_srv_conf_t        **uscfp, *uscf;
     ngx_http_upstream_main_conf_t        *umcf;
 
+    // 判断并确保lua代码get_upstreams()传入参数个数为0
     if (lua_gettop(L) != 0) {
         return luaL_error(L, "no argument expected");
     }
 
     umcf = ngx_http_lua_upstream_get_upstream_main_conf(L);
     uscfp = umcf->upstreams.elts;
+    /*
+        umcf->upstreams中存着一个表：其长度为umcf->upstreams.nelts
+        其中的内容是数组umcf->upstreams.elts
+    */
 
     lua_createtable(L, umcf->upstreams.nelts, 0);
 
@@ -126,6 +134,7 @@ ngx_http_lua_upstream_get_upstreams(lua_State * L)
 
         uscf = uscfp[i];
 
+        // 把host push到lua栈中，如果有port，则把:port附加到主机字符串后面
         lua_pushlstring(L, (char *) uscf->host.data, uscf->host.len);
         if (uscf->port) {
             lua_pushfstring(L, ":%d", (int) uscf->port);
@@ -135,6 +144,7 @@ ngx_http_lua_upstream_get_upstreams(lua_State * L)
              * here? */
         }
 
+        // 把lua栈顶的数据放入table中并把栈顶pop出来，其在table中的索引为i+1
         lua_rawseti(L, -2, i + 1);
     }
 
@@ -154,6 +164,7 @@ ngx_http_lua_upstream_get_servers(lua_State * L)
         return luaL_error(L, "exactly one argument expected");
     }
 
+    //获取upstream名
     host.data = (u_char *) luaL_checklstring(L, 1, &host.len);
 
     us = ngx_http_lua_upstream_find_upstream(L, &host);
@@ -491,6 +502,7 @@ ngx_http_lua_upstream_get_upstream_main_conf(lua_State *L)
 {
     ngx_http_request_t                   *r;
 
+    // TODO: 从ngx.resty模块的函数中，获取要是有的r
     r = ngx_http_lua_get_request(L);
 
     if (r == NULL) {
@@ -498,6 +510,7 @@ ngx_http_lua_upstream_get_upstream_main_conf(lua_State *L)
                                                    ngx_http_upstream_module);
     }
 
+    // TODO: 获取main_conf文件
     return ngx_http_get_module_main_conf(r, ngx_http_upstream_module);
 }
 
@@ -512,9 +525,11 @@ ngx_http_lua_upstream_find_upstream(lua_State *L, ngx_str_t *host)
     ngx_http_upstream_srv_conf_t        **uscfp, *uscf;
     ngx_http_upstream_main_conf_t        *umcf;
 
+    // 获取所有upstreams的配置
     umcf = ngx_http_lua_upstream_get_upstream_main_conf(L);
     uscfp = umcf->upstreams.elts;
 
+    //从中找出和host name匹配的项
     for (i = 0; i < umcf->upstreams.nelts; i++) {
 
         uscf = uscfp[i];
@@ -526,6 +541,7 @@ ngx_http_lua_upstream_find_upstream(lua_State *L, ngx_str_t *host)
         }
     }
 
+    //针对data中带有:port的情况，重新处理
     port = ngx_strlchr(host->data, host->data + host->len, ':');
     if (port) {
         port++;
